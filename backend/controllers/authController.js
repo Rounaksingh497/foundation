@@ -37,14 +37,10 @@ export const registerUser = asyncHandler(async (req, res) => {
     html: `<p>Hi ${user.name},</p><p>Please verify your email by clicking the link below:</p><a href="${verifyUrl}">${verifyUrl}</a>`,
   });
 
-  const token = generateToken(user._id);
-  sendTokenCookie(res, token);
-
   res.status(201).json({
     success: true,
-    token,
-    user: { id: user._id, name: user.name, email: user.email, role: "user" },
-    message: "Registration successful. Please check your email to verify your account.",
+    message:
+      "Registration successful. Please check your email to verify your account.",
   });
 });
 
@@ -58,6 +54,13 @@ export const loginUser = asyncHandler(async (req, res) => {
   if (!user || !(await user.matchPassword(password))) {
     res.status(401);
     throw new Error("Invalid email or password");
+  }
+
+  if (!user.isEmailVerified) {
+    res.status(403);
+    throw new Error(
+      "Please verify your email address before logging in."
+    );
   }
 
   const token = generateToken(user._id);
@@ -76,28 +79,52 @@ export const loginUser = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Verify email
-// @route   GET /api/auth/verify-email/:token
-// @access  Public
+//@desc Verify Email
+//@ route GET/api//verify-email/:token
+//@access public
 export const verifyEmail = asyncHandler(async (req, res) => {
-  const hashedToken = crypto.createHash("sha256").update(req.params.token).digest("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(req.params.token)
+    .digest("hex");
 
   const user = await User.findOne({
     emailVerificationToken: hashedToken,
-    emailVerificationExpire: { $gt: Date.now() },
   });
 
   if (!user) {
-    res.status(400);
-    throw new Error("Invalid or expired verification token");
+    return res.status(200).json({
+      success: true,
+      message: "Email already verified or verification link already used.",
+    });
+  }
+
+  // Check expiry
+  if (user.emailVerificationExpire < Date.now()) {
+    return res.status(400).json({
+      success: false,
+      message: "Verification link has expired.",
+    });
+  }
+
+  // Already verified
+  if (user.isEmailVerified) {
+    return res.status(200).json({
+      success: true,
+      message: "Email already verified.",
+    });
   }
 
   user.isEmailVerified = true;
   user.emailVerificationToken = undefined;
   user.emailVerificationExpire = undefined;
+
   await user.save();
 
-  res.json({ success: true, message: "Email verified successfully" });
+  res.status(200).json({
+    success: true,
+    message: "Email verified successfully.",
+  });
 });
 
 // @desc    Forgot password - send reset link
@@ -108,6 +135,13 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   if (!user) {
     res.status(404);
     throw new Error("No account found with this email");
+  }
+
+  if (!user.isEmailVerified) {
+    res.status(400);
+    throw new Error(
+      "Please verify your email before resetting your password."
+    );
   }
 
   const resetToken = crypto.randomBytes(32).toString("hex");
