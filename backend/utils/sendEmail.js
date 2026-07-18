@@ -64,7 +64,7 @@ export const sendEmail = async ({ to, subject, html, text }) => {
         ],
         subject,
         htmlContent: html,
-        textContent: text || "",
+        textContent: text || "Please open this email in HTML mode if you cannot see the verification link.",
       },
       {
         headers: {
